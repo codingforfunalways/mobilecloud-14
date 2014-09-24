@@ -25,8 +25,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 import org.magnum.dataup.model.Video;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * This class provides a simple implementation to store video binary
@@ -38,6 +48,14 @@ import org.magnum.dataup.model.Video;
  */
 public class VideoFileManager {
 
+	private static final AtomicLong currentId = new AtomicLong(0L);
+	
+	private Map<Long,Video> videos = new HashMap<Long, Video>();
+
+	private static VideoFileManager videoDataMgr;
+	
+	
+
 	/**
 	 * This static factory method creates and returns a 
 	 * VideoFileManager object to the caller. Feel free to customize
@@ -47,7 +65,14 @@ public class VideoFileManager {
 	 * @throws IOException
 	 */
 	public static VideoFileManager get() throws IOException {
-		return new VideoFileManager();
+		if(videoDataMgr == null)
+		{
+			return new VideoFileManager();
+		}
+		else
+		{
+			return videoDataMgr;
+		}
 	}
 	
 	private Path targetDir_ = Paths.get("videos");
@@ -112,5 +137,60 @@ public class VideoFileManager {
 		Path target = getVideoPath(v);
 		Files.copy(videoData, target, StandardCopyOption.REPLACE_EXISTING);
 	}
+
+	public Video save(Video entity) {
+        checkAndSetId(entity);
+        setDataUrl(entity);
+        videos.put(entity.getId(), entity);
+        return entity;
+    }
+	
+	private void setDataUrl(Video entity){
+		String url= getDataUrl(entity.getId());
+		entity.setDataUrl(url);
+		
+	}
+
+    private void checkAndSetId(Video entity) {
+        if(entity.getId() == 0){
+            entity.setId(currentId.incrementAndGet());
+        }
+    }
+   
+    private String getDataUrl(long videoId){
+        String url = getUrlBaseForLocalServer() + "/video/" + videoId + "/data";
+        return url;
+    }
+
+    private String getUrlBaseForLocalServer() {
+       HttpServletRequest request = 
+           ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes()).getRequest();
+       String base = 
+          "http://"+request.getServerName() 
+          + ((request.getServerPort() != 80) ? ":"+request.getServerPort() : "");
+       return base;
+    }
+    
+    // You would need some Controller method to call this...
+    public void saveVideo(Video v, MultipartFile videoData) throws IOException {
+         VideoFileManager.get().saveVideoData(v, videoData.getInputStream());
+    }
+    
+    public Collection<Video> getVideoList(){
+    	
+    	return videos.values();
+    }
+    
+    public Video getVideoById(Long id) throws IOException{
+    	Video v= videos.get(id);
+    	if(v==null){
+			throw new IOException("Unable to find the referenced video data for Id:"+id);
+		}
+    	return videos.get(id);
+    }
+    public void serveVideo(Video v, HttpServletResponse response) throws IOException {
+       
+        VideoFileManager.get().copyVideoData(v, response.getOutputStream());
+   }
 	
 }
